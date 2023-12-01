@@ -1,0 +1,68 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix, classification_report
+import matplotlib.pyplot as plt
+import seaborn as sns
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import Embedding, Conv1D, GlobalMaxPooling1D, Dense
+from tensorflow.keras.optimizers import Adam
+import os
+import pickle
+# File path to JSON dataset
+file_path = r'C:\Users\Administrator\Documents\GitHub\Datasets\yelp_academic_dataset_review.json'
+# Load data in chunks
+chunk_size = 1000000
+model_save_path = 'sentiment_analysis_rnn_model.h5'
+# Initialize the model outside the loop
+model = None  
+epochs = 10
+num_classes = 3
+# Load the data in chunks
+for chunk in pd.read_json(file_path, lines=True, chunksize=chunk_size):
+    print(chunk)
+    # Accessing the data DataFrame
+    texts = chunk['text'].tolist()
+    labels = pd.cut(chunk['stars'], bins=[0, 2, 3, 5], labels=[1, 2, 3])
+
+    # Tokenize the text
+    tokenizer = Tokenizer(num_words=10000, oov_token='<OOV>')
+    tokenizer.fit_on_texts(texts)
+    sequences = tokenizer.texts_to_sequences(texts)
+
+    # Padding sequences
+    max_len = 100 
+    padded_sequences = pad_sequences(sequences, maxlen=max_len, padding='post', truncating='post')
+
+    # Convert labels to numerical format
+    numeric_labels = np.array(labels)
+
+    # Convert to one-hot encoding for multi-class classification
+    labels_one_hot = pd.get_dummies(labels).values
+
+    # Split the dataset into training and testing sets
+    x_train, x_test, y_train, y_test = train_test_split(padded_sequences, labels_one_hot, test_size=0.2, random_state=42)
+
+    # Build or load the CNN model
+    if model is None or not os.path.exists(model_save_path):
+        embedding_dim = 50
+        filters = 64
+        kernel_size = 3
+
+        model = Sequential()
+        model.add(Embedding(input_dim=10000, output_dim=embedding_dim, input_length=max_len))
+        model.add(Conv1D(filters=filters, kernel_size=kernel_size, activation='relu'))
+        model.add(GlobalMaxPooling1D())
+        model.add(Dense(num_classes, activation='softmax'))  # Multi-class classification
+        model.compile(optimizer=Adam(learning_rate=0.001), loss='categorical_crossentropy', metrics=['accuracy'])  # Categorical crossentropy loss
+
+    # Train the model and store the history
+    history = model.fit(x_train, y_train, epochs=epochs, batch_size=128, validation_split=0.1, verbose=1)
+    
+    # Display the current epoch and metrics
+    print(f"Epoch {epochs} - Loss: {history.history['loss'][-1]}, Accuracy: {history.history['accuracy'][-1]}, Validation Loss: {history.history['val_loss'][-1]}, Validation Accuracy: {history.history['val_accuracy'][-1]}")
+
+# Use only the final loop's history for plotting
+final_history = history.history
